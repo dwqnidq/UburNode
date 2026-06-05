@@ -1,30 +1,23 @@
 """HTTP 请求日志中间件。
 
 每次请求写入 logs/uburnode.log：入站 / 出站 / 耗时 / 状态码。
-X-Request-Id 支持上游传入或自动生成，便于与业务日志关联。
+使用 @app.middleware("http") 而非 BaseHTTPMiddleware，避免异常绕过 FastAPI handler。
 """
 
 from __future__ import annotations
 
 import time
 import uuid
-from typing import Callable
 
-from fastapi import Request, Response
+from fastapi import FastAPI, Request, Response
 from loguru import logger
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.types import ASGIApp
 
 MAX_LOG_BODY_LEN = 512
 
 
-class RequestLogMiddleware(BaseHTTPMiddleware):
-    """在 ASGI 边界记录请求生命周期，不解析 body（避免大 payload 拖慢日志）。"""
-
-    def __init__(self, app: ASGIApp) -> None:
-        super().__init__(app)
-
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+def register_request_log_middleware(app: FastAPI) -> None:
+    @app.middleware("http")
+    async def request_log_middleware(request: Request, call_next) -> Response:
         request_id = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
         client_host = request.client.host if request.client else "unknown"
         started_at = time.perf_counter()

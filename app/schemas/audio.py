@@ -104,13 +104,13 @@ class AudioResult(BaseModel):
     recommend_weight: float
 
 
-class CreateAudioResponse(BaseModel):
+class CreateAudioData(BaseModel):
+    """创建成功时写入 ApiResponse.data。"""
+
     id: str
 
 
-class SearchAudioResponse(BaseModel):
+class SearchAudioData(BaseModel):
+    """检索成功时写入 ApiResponse.data。"""
+
     results: list[AudioResult] = Field(default_factory=list)
-
-
-class EmptyResponse(BaseModel):
-    ok: bool = True
