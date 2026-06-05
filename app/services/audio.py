@@ -9,14 +9,15 @@ from __future__ import annotations
 from loguru import logger
 
 from app.comm.client import CommClient
+from app.core.exceptions import CommMaterialNotFoundError
 from app.es.sync import EsSync
 from app.schemas.audio import (
     CreateAudioRequest,
-    CreateAudioResponse,
+    CreateAudioData,
     EvidenceLevel,
     EVIDENCE_WEIGHT_MAP,
+    SearchAudioData,
     SearchAudioRequest,
-    SearchAudioResponse,
     UpdateAudioRequest,
 )
 from app.services.retrieval import RetrievalService
@@ -35,7 +36,7 @@ class AudioService:
         self._es_sync = es_sync
         self._retrieval = retrieval
 
-    async def create_audio(self, request: CreateAudioRequest) -> CreateAudioResponse:
+    async def create_audio(self, request: CreateAudioRequest) -> CreateAudioData:
         weight = request.recommend_weight
         if weight is None:
             weight = EVIDENCE_WEIGHT_MAP[request.evidence_level]
@@ -60,7 +61,7 @@ class AudioService:
             evidence_level=request.evidence_level.value,
             recommend_weight=weight,
         )
-        return CreateAudioResponse(id=material_id)
+        return CreateAudioData(id=material_id)
 
     async def update_audio(self, material_id: str, request: UpdateAudioRequest) -> None:
         await self._comm.update_audio_material(
@@ -103,13 +104,13 @@ class AudioService:
         await self._comm.delete_audio_material(material_id)
         await self._es_sync.delete_audio(material_id)
 
-    async def search_audio(self, request: SearchAudioRequest) -> SearchAudioResponse:
+    async def search_audio(self, request: SearchAudioRequest) -> SearchAudioData:
         results = await self._retrieval.search(request)
-        return SearchAudioResponse(results=results)
+        return SearchAudioData(results=results)
 
     async def _resolve_latest_material_id(self, name: str) -> str:
         """comm CreateAudioMaterial 返回 EmptyRes，按名称反查 id（临时方案）。"""
         materials = await self._comm.list_audio_materials_by_name(name)
         if not materials:
-            raise RuntimeError(f"创建成功但按名称未找到原料：{name}")
+            raise CommMaterialNotFoundError(name)
         return materials[0].id
