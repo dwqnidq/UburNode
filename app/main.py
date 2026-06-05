@@ -19,11 +19,12 @@ from loguru import logger
 from app.api.audio import router as audio_router
 from app.comm.client import CommClient
 from app.core.config import Settings, get_settings
+from app.core.exception_handlers import register_exception_handlers
 from app.core.logging import setup_logging
 from app.embedding.encoder import Encoder
 from app.es.search import EsSearch
 from app.es.sync import EsSync
-from app.middleware.request_log import RequestLogMiddleware
+from app.middleware.request_log import register_request_log_middleware
 from app.services.audio import AudioService
 from app.services.retrieval import RetrievalService
 
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _app_state.es_client = es_client
 
     encoder = Encoder(settings)
-    # debug 模式跳过 BGE-M3 加载：本地无 GPU / 无外网时可先调 HTTP 路由
+    # debug 模式跳过向量模型加载：本地无外网时可先调 HTTP 路由
     if not settings.app_debug:
         encoder.load()
     _app_state.encoder = encoder
@@ -104,14 +105,17 @@ def create_app() -> FastAPI:
         description="音频检索服务 — HTTP 对外，gRPC 调 comm-service，ES 索引副本",
         version="0.1.0",
         lifespan=lifespan,
-        debug=settings.app_debug,
+        debug=False,
     )
-    app.add_middleware(RequestLogMiddleware)
-    app.include_router(audio_router)
+    register_exception_handlers(app)
+    register_request_log_middleware(app)
+    app.include_router(audio_router, prefix="/api")
 
-    @app.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+    from app.schemas.response import ApiResponse, success
+
+    @app.get("/health", response_model=ApiResponse)
+    async def health() -> ApiResponse:
+        return success(data={}, msg="服务正常")
 
     return app
 
