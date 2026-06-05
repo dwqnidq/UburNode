@@ -6,11 +6,16 @@ proto 真源：仓库根 proto/bionode_comm.proto，变更后须重新 gen_proto
 
 from __future__ import annotations
 
+import asyncio
+
 import grpc
 from loguru import logger
 
 from app.comm.grpc_gen import bionode_comm_pb2, bionode_comm_pb2_grpc
 from app.core.config import Settings
+
+# comm ListAudioMaterials：status 默认 0 时列表为空；新建原料为已发布状态 1
+AUDIO_MATERIAL_STATUS_PUBLISHED = 1
 
 
 class CommClient:
@@ -23,9 +28,24 @@ class CommClient:
 
     async def connect(self) -> None:
         target = self._settings.comm_grpc_target
-        logger.info("正在连接 comm-service gRPC：{}", target)
-        self._channel = grpc.aio.insecure_channel(target)
+        tls = self._settings.comm_grpc_use_tls
+        logger.info("正在连接 comm-service gRPC：{}（TLS={}）", target, tls)
+        if tls:
+            credentials = grpc.ssl_channel_credentials()
+            self._channel = grpc.aio.secure_channel(target, credentials)
+        else:
+            self._channel = grpc.aio.insecure_channel(target)
         self._stub = bionode_comm_pb2_grpc.AudioMaterialServiceStub(self._channel)
+
+    async def ping(self, timeout_sec: float = 10.0) -> int:
+        """探测 comm-service：调用 GetDistinctTags（首次 RPC 时建连）。"""
+        if self._stub is None:
+            raise RuntimeError("CommClient 未连接，请先调用 connect()")
+        response = await asyncio.wait_for(
+            self._stub.GetDistinctTags(bionode_comm_pb2.EmptyReq()),
+            timeout=timeout_sec,
+        )
+        return len(response.tags)
 
     async def close(self) -> None:
         if self._channel is not None:
@@ -116,8 +136,13 @@ class CommClient:
 
         response = await stub.ListAudioMaterials(
             bionode_comm_pb2.ListAudioMaterialsReq(
-                page=bionode_common_pb2.PageRequest(page=1, page_size=10),
+                page=bionode_common_pb2.PageRequest(
+                    page=1,
+                    page_size=10,
+                    order_by="create_time desc",
+                ),
                 name=name,
+                status=AUDIO_MATERIAL_STATUS_PUBLISHED,
             )
         )
         return list(response.materials)
