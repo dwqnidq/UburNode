@@ -8,9 +8,32 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import AsyncIterator
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_VENV_PYTHON = _PROJECT_ROOT / ".venv" / "bin" / "python"
+
+
+def _bootstrap_dev_entry() -> None:
+    """直接运行 main.py 时切到项目 .venv，并保证可 import app 包。"""
+    if __name__ != "__main__":
+        return
+    root = str(_PROJECT_ROOT)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    if not _VENV_PYTHON.is_file():
+        return
+    if Path(sys.executable).resolve() == _VENV_PYTHON.resolve():
+        return
+    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), *sys.argv])
+
+
+_bootstrap_dev_entry()
 
 from elasticsearch import AsyncElasticsearch
 from fastapi import FastAPI
@@ -121,3 +144,20 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
+
+def run_dev_server() -> None:
+    """本地开发一键启动（读取 .env 的 APP_HOST / APP_PORT）。"""
+    import uvicorn
+
+    settings = get_settings()
+    uvicorn.run(
+        "app.main:app",
+        host=settings.app_host,
+        port=settings.app_port,
+        reload=True,
+    )
+
+
+if __name__ == "__main__":
+    run_dev_server()
