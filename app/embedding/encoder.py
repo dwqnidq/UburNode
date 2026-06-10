@@ -1,54 +1,44 @@
-"""BGE-small-zh 文本向量化。
-
-sentence-transformers 推理为 CPU 阻塞调用，必须用 anyio.to_thread 避免卡住事件循环（规范 §八）。
-"""
+"""向量编码器工厂：按配置选择 ONNX（生产）或 PyTorch（对比/回退）。"""
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-import anyio
-from loguru import logger
-
-from app.core.exceptions import EncoderNotReadyError
-
 if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
-
     from app.core.config import Settings
 
 
-class Encoder:
-    """文本 → 512 维向量（BAAI/bge-small-zh-v1.5，normalize_embeddings=True 便于余弦比较）。"""
+class EncoderBase(ABC):
+    """Encoder / OnnxEncoder / TorchEncoder 共用接口。"""
 
-    def __init__(self, settings: Settings) -> None:
-        self._settings = settings
-        self._model: SentenceTransformer | None = None
-
-    def load(self) -> None:
-        from sentence_transformers import SentenceTransformer
-
-        logger.info("正在加载向量模型：{}", self._settings.embedding_model)
-        self._model = SentenceTransformer(self._settings.embedding_model)
-        logger.info("向量模型加载完成")
+    @abstractmethod
+    def load(self) -> None: ...
 
     @property
-    def is_loaded(self) -> bool:
-        return self._model is not None
+    @abstractmethod
+    def is_loaded(self) -> bool: ...
 
-    async def encode(self, texts: list[str]) -> list[list[float]]:
-        if not texts:
-            return []
-        if self._model is None:
-            raise EncoderNotReadyError()
+    @abstractmethod
+    async def encode(self, texts: list[str]) -> list[list[float]]: ...
 
-        return await anyio.to_thread.run_sync(self._encode_sync, texts)
+    @abstractmethod
+    async def encode_one(self, text: str) -> list[float]: ...
 
-    def _encode_sync(self, texts: list[str]) -> list[list[float]]:
-        assert self._model is not None
-        vectors = self._model.encode(texts, normalize_embeddings=True)
-        return [v.tolist() for v in vectors]
 
-    async def encode_one(self, text: str) -> list[float]:
-        results = await self.encode([text])
-        return results[0]
+# 测试替身与类型标注沿用 Encoder 名称
+Encoder = EncoderBase
+
+
+def create_encoder(settings: Settings) -> EncoderBase:
+    backend = settings.embedding_backend.lower()
+    if backend == "onnx":
+        from app.embedding.onnx_encoder import OnnxEncoder
+
+        return OnnxEncoder(settings)
+    if backend == "torch":
+        from app.embedding.torch_encoder import TorchEncoder
+
+        return TorchEncoder(settings)
+    msg = f"不支持的 EMBEDDING_BACKEND={settings.embedding_backend!r}，可选 onnx / torch"
+    raise ValueError(msg)
