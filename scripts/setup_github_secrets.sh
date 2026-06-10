@@ -27,7 +27,7 @@ ensure_gh_auth() {
     return 0
   fi
   log "需要登录 GitHub（浏览器授权一次即可）"
-  gh auth login -h github.com -p https -s repo,write:packages,read:packages
+  gh auth login -h github.com -p https -s repo
 }
 
 ensure_ssh_key() {
@@ -82,21 +82,14 @@ main() {
   gh secret set SSH_USER --body "$SSH_USER" --repo "$REPO"
   gh secret set SSH_PORT --body "$SSH_PORT" --repo "$REPO"
 
-  read -rp "仓库或 GHCR 镜像是否为私有？(y/N): " need_ghcr
-  if [[ "${need_ghcr,,}" == "y" ]]; then
-    log "在 GitHub → Settings → Developer settings 创建 classic token，勾选 read:packages"
-    read -rsp "粘贴 GHCR_TOKEN: " ghcr_token
-    echo
-    gh secret set GHCR_TOKEN --body "$ghcr_token" --repo "$REPO"
-  fi
-
   log ""
-  log "=== 请在服务器创建 $DEPLOY_DIR/.env ==="
-  log "  mkdir -p $DEPLOY_DIR && cp 项目内 .env.example 为 .env 后编辑"
+  log "=== 请在服务器首次克隆并配置 .env ==="
+  log "  git clone -b dev https://github.com/$REPO.git $DEPLOY_DIR"
+  log "  cp $DEPLOY_DIR/.env.example $DEPLOY_DIR/.env   # 编辑 COMM_GRPC_* 等"
+  log "  cd $DEPLOY_DIR && docker compose up -d --build"
   log "  ES_NODE 在 compose 中已覆盖为 http://elasticsearch:9200"
-  log "  无需手动安装 Docker：首次 Deploy 会自动执行 server_bootstrap.sh（已安装则跳过）"
   log ""
-  log "Secrets 已配置。在 Actions 里 Run workflow「Deploy UburNode」即可一键部署。"
+  log "Secrets 已配置。Actions 里 Run「Deploy UburNode」或 push 到 dev 即可部署。"
 }
 
 main "$@"

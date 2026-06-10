@@ -131,18 +131,26 @@ COMM_GRPC_INTEGRATION=1 pytest tests/test_comm_grpc.py -v
 
 ## Docker 部署（服务器）
 
+与 `intelligent_reimbursement` 相同：**服务器 git pull + docker compose build**，不依赖 GHCR。
+
 ```bash
-# 1. 本机一键写入 GitHub Secrets（需浏览器登录 gh 一次）
+# 1. 本机一键写入 GitHub Secrets（SSH_HOST / SSH_USER / SSH_PRIVATE_KEY）
 chmod +x scripts/setup_github_secrets.sh
 ./scripts/setup_github_secrets.sh
 
 # 2. 服务器一次性准备
-#    - 将 setup 脚本输出的公钥写入 ~/.ssh/authorized_keys
-#    - mkdir -p /opt/uburnode && 复制 .env.example 为 /opt/uburnode/.env 并填写 COMM_GRPC_* 等
-#    - 无需手动装 Docker：首次 Deploy 会幂等执行 scripts/server_bootstrap.sh
+#    - 将公钥写入 ~/.ssh/authorized_keys
+#    - 已安装 Docker 与 Compose；/etc/docker/daemon.json 镜像加速自行维护
+#    - 克隆仓库并配置 .env：
+mkdir -p /opt/uburnode
+git clone -b dev https://github.com/dwqnidq/UburNode.git /opt/uburnode
+cp /opt/uburnode/.env.example /opt/uburnode/.env   # 编辑 COMM_GRPC_* 等
 
-# 3. GitHub → Actions → Deploy UburNode → Run workflow
-#    后续每次 Deploy 仅 pull 镜像 + compose up，已装 Docker 则跳过安装
+# 3. 首次手动启动（build 约 20～40 分钟）
+cd /opt/uburnode && docker compose up -d --build
+
+# 4. 以后：GitHub → Actions → Deploy UburNode → Run workflow
+#    或 push 到 dev 分支自动部署（git pull + compose up --build）
 ```
 
 生产访问：`http://<服务器IP>:8001/docs`（nginx 映射宿主机 8001 → 容器 80，避免与宝塔 80 冲突）。
