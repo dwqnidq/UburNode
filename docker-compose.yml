@@ -1,5 +1,5 @@
 # 生产编排：nginx 反代 + UburNode + Elasticsearch（单节点）
-# 镜像由 CI 推送到 GHCR；服务器 /opt/uburnode 放本文件与 .env
+# 服务器 git pull 后本地 build app 镜像（与 intelligent_reimbursement 相同模式）
 
 services:
   nginx:
@@ -15,7 +15,10 @@ services:
     restart: unless-stopped
 
   app:
-    image: ${UBURNODE_IMAGE:-ghcr.io/dwqnidq/uburnode:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: uburnode-app:local
     container_name: uburnode-app
     env_file:
       - .env
