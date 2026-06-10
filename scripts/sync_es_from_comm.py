@@ -36,7 +36,7 @@ from app.bionode_grpc_clients import CommClient  # noqa: E402
 from app.core.config import Settings, get_settings  # noqa: E402
 from app.core.logging import setup_logging  # noqa: E402
 from app.core.tags import DIMENSION_FIELDS, dimensions_from_flat_tags  # noqa: E402
-from app.embedding.encoder import Encoder  # noqa: E402
+from app.embedding.encoder import create_encoder  # noqa: E402
 from app.es.search import EsSearch  # noqa: E402
 from app.es.sync import EsSync  # noqa: E402
 from app.schemas.audio import EVIDENCE_WEIGHT_MAP, EvidenceLevel  # noqa: E402
@@ -449,7 +449,7 @@ async def _run_cli(*, dry_run: bool) -> int:
     settings = get_settings()
     setup_logging(settings)
     es_client = AsyncElasticsearch(settings.es_node)
-    encoder = Encoder(settings)
+    encoder = create_encoder(settings)
     encoder.load()
     comm_client = CommClient(settings)
     await comm_client.connect()
