@@ -44,7 +44,7 @@ from app.bionode_grpc_clients import CommClient
 from app.core.config import Settings, get_settings
 from app.core.exception_handlers import register_exception_handlers
 from app.core.logging import setup_logging
-from app.embedding.encoder import Encoder
+from app.embedding.encoder import Encoder, create_encoder
 from app.es.search import EsSearch
 from app.es.sync import EsSync
 from app.middleware.request_log import register_request_log_middleware
@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     es_client = AsyncElasticsearch(settings.es_node)
     _app_state.es_client = es_client
 
-    encoder = Encoder(settings)
+    encoder = create_encoder(settings)
     # debug 模式跳过向量模型加载：本地无外网时可先调 HTTP 路由
     if not settings.app_debug:
         encoder.load()
