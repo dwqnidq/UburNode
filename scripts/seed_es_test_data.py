@@ -33,7 +33,7 @@ from elasticsearch import AsyncElasticsearch
 from loguru import logger
 
 from app.core.config import get_settings
-from app.embedding.encoder import Encoder
+from app.embedding.encoder import create_encoder
 from app.es.search import EsSearch
 from app.es.sync import EsSync
 from app.schemas.audio import SearchAudioRequest
@@ -803,7 +803,7 @@ async def _count_tag_vectors(client: AsyncElasticsearch, index: str) -> int:
 
 async def _seed(settings, *, verify: bool, reseed: bool, total: int) -> None:
     client = AsyncElasticsearch(settings.es_node)
-    encoder = Encoder(settings)
+    encoder = create_encoder(settings)
     encoder.load()
     es_search = EsSearch(client, settings)
     await es_search.ensure_indices()
