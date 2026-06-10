@@ -2,80 +2,66 @@ name: Deploy UburNode
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
-  packages: write
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ghcr.io/dwqnidq/uburnode
   DEPLOY_DIR: /opt/uburnode
+  GIT_REPO: https://github.com/dwqnidq/UburNode.git
+  DEPLOY_BRANCH: main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: uburnode-deploy
+      cancel-in-progress: true
+
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
-      - name: Copy compose and nginx to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
-          source: "docker-compose.yml,deploy,scripts/server_bootstrap.sh"
-          target: ${{ env.DEPLOY_DIR }}
-          strip_components: 0
+      - name: Validate required secrets
+        run: |
+          test -n "${{ secrets.SSH_HOST }}" || (echo "Missing SSH_HOST" && exit 1)
+          test -n "${{ secrets.SSH_USER }}" || (echo "Missing SSH_USER" && exit 1)
+          test -n "${{ secrets.SSH_PRIVATE_KEY }}" || (echo "Missing SSH_PRIVATE_KEY" && exit 1)
 
       - name: Deploy on server
         uses: appleboy/ssh-action@v1.2.0
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
-          command_timeout: 600m
-          envs: IMAGE_TAG,GHCR_TOKEN
+          command_timeout: 90m
           script: |
             set -euo pipefail
-            DEPLOY_DIR="${{ env.DEPLOY_DIR }}"
-            mkdir -p "$DEPLOY_DIR"
-            cd "$DEPLOY_DIR"
-            if [ -f scripts/server_bootstrap.sh ]; then
-              chmod +x scripts/server_bootstrap.sh
-              UBURNODE_BOOTSTRAP_MARKER="$DEPLOY_DIR/.docker_bootstrapped" \
-                bash scripts/server_bootstrap.sh
+            DEPLOY_DIR="${{ secrets.DEPLOY_PATH || env.DEPLOY_DIR }}"
+            GIT_REPO="${{ env.GIT_REPO }}"
+            DEPLOY_BRANCH="${{ secrets.DEPLOY_BRANCH || env.DEPLOY_BRANCH }}"
+
+            if [ ! -d "$DEPLOY_DIR/.git" ]; then
+              if [ -d "$DEPLOY_DIR" ] && [ -n "$(ls -A "$DEPLOY_DIR" 2>/dev/null)" ]; then
+                echo "错误: $DEPLOY_DIR 已存在但不是 git 仓库。"
+                echo "请备份 .env 后: rm -rf $DEPLOY_DIR && git clone -b $DEPLOY_BRANCH $GIT_REPO $DEPLOY_DIR"
+                exit 1
+              fi
+              mkdir -p "$DEPLOY_DIR"
+              git clone -b "$DEPLOY_BRANCH" "$GIT_REPO" "$DEPLOY_DIR"
             fi
+
+            cd "$DEPLOY_DIR"
+            git fetch --all --prune
+            git checkout "$DEPLOY_BRANCH"
+            git pull --ff-only origin "$DEPLOY_BRANCH"
+
             if [ ! -f .env ]; then
               echo "缺少 $DEPLOY_DIR/.env，请从 .env.example 复制并填写后重试"
               exit 1
             fi
-            if [ -n "${GHCR_TOKEN:-}" ]; then
-              echo "$GHCR_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            fi
-            export UBURNODE_IMAGE=ghcr.io/dwqnidq/uburnode:${IMAGE_TAG}
-            docker compose pull
-            docker compose up -d
+
+            docker compose up -d --build --remove-orphans
+            docker image prune -f
             docker compose ps
